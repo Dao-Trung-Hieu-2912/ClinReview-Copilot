@@ -1,7 +1,15 @@
+import os
 import sqlite3
 import uuid
 from datetime import datetime
 from pydantic import BaseModel
+
+
+def _format_session_title(title: str, limit: int = 50, default: str = "Cuộc trò chuyện mới") -> str:
+    """Format and truncate session title safely."""
+    safe = title[:limit] + "..." if len(title) > limit else title
+    return safe.strip() or default
+
 
 class ChatSession(BaseModel):
     id: str
@@ -19,7 +27,6 @@ class SessionManager:
         return sqlite3.connect(self.db_path, check_same_thread=False)
 
     def _init_db(self):
-        import os
         os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
         with self._get_conn() as conn:
             conn.execute(
@@ -75,9 +82,7 @@ class SessionManager:
                 )
             else:
                 created_at = now
-                safe_title = title[:50] + "..." if len(title) > 50 else title
-                if not safe_title.strip():
-                    safe_title = "Cuộc trò chuyện mới"
+                safe_title = _format_session_title(title)
                 cursor.execute(
                     "INSERT INTO chat_sessions (id, patient_id, title, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
                     (session_id, patient_id, safe_title, created_at, now)
@@ -88,7 +93,7 @@ class SessionManager:
     def rename_session(self, session_id: str, title: str) -> bool:
         with self._get_conn() as conn:
             cursor = conn.cursor()
-            safe_title = title[:50] + "..." if len(title) > 50 else title
+            safe_title = _format_session_title(title)
             cursor.execute(
                 "UPDATE chat_sessions SET title = ?, updated_at = ? WHERE id = ?",
                 (safe_title, datetime.now().isoformat(), session_id)

@@ -12,7 +12,7 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
 from src.agents.retrieval.vector import clear_patient_evidence
-from src.api.dependencies import get_demo_repository
+from src.api.dependencies import get_demo_repository, require_patient
 from src.api.ingestion_routes import _ingestion_service
 from src.clinical.audit import AuditEvent
 from src.clinical.canonical import (
@@ -118,12 +118,7 @@ def get_timeline(
     page_size: int = Query(default=20, ge=1, le=100),
     repo: DemoRepository = Depends(get_demo_repository),
 ) -> TimelineResponse:
-    if not repo.get_patient(patient_id):
-        raise HTTPException(
-            status_code=404,
-            detail={"code": "PATIENT_SCOPE_DENIED", "message": "Bệnh nhân không tồn tại hoặc không có quyền truy cập."},
-        )
-
+    require_patient(repo, patient_id)
     events = repo.get_timeline(patient_id)
     total = len(events)
     start = (page - 1) * page_size
@@ -145,12 +140,7 @@ def get_trends(
     code: str = Query(..., description="Mã LOINC xét nghiệm"),
     repo: DemoRepository = Depends(get_demo_repository),
 ) -> TrendResponse:
-    if not repo.get_patient(patient_id):
-        raise HTTPException(
-            status_code=404,
-            detail={"code": "PATIENT_SCOPE_DENIED", "message": "Bệnh nhân không tồn tại hoặc không có quyền truy cập."},
-        )
-
+    require_patient(repo, patient_id)
     display, unit, points = repo.get_trends(patient_id, code)
     wm = repo.get_watermark(patient_id)
 
@@ -169,12 +159,7 @@ def get_drug_interactions(
     patient_id: str,
     repo: DemoRepository = Depends(get_demo_repository),
 ) -> DrugInteractionListResponse:
-    if not repo.get_patient(patient_id):
-        raise HTTPException(
-            status_code=404,
-            detail={"code": "PATIENT_SCOPE_DENIED", "message": "Bệnh nhân không tồn tại hoặc không có quyền truy cập."},
-        )
-
+    require_patient(repo, patient_id)
     wm = repo.get_watermark(patient_id)
     return DrugInteractionListResponse(items=[], data_watermark=wm)
 
@@ -185,12 +170,7 @@ def get_patient_memory(
     version: int | None = None,
     repo: DemoRepository = Depends(get_demo_repository),
 ) -> PatientMemory:
-    if not repo.get_patient(patient_id):
-        raise HTTPException(
-            status_code=404,
-            detail={"code": "PATIENT_SCOPE_DENIED", "message": "Bệnh nhân không tồn tại hoặc không có quyền truy cập."},
-        )
-
+    require_patient(repo, patient_id)
     memory = repo.get_patient_memory(patient_id, version)
     if not memory:
         raise HTTPException(
@@ -204,11 +184,7 @@ def delete_patient(
     patient_id: str,
     repo: DemoRepository = Depends(get_demo_repository),
 ) -> None:
-    if not repo.get_patient(patient_id):
-        raise HTTPException(
-            status_code=404,
-            detail={"code": "PATIENT_SCOPE_DENIED", "message": "Bệnh nhân không tồn tại hoặc không có quyền truy cập."},
-        )
+    require_patient(repo, patient_id)
 
     # 1. Delete from repository
     repo.delete_patient(patient_id)
@@ -241,12 +217,7 @@ def _approved_care_plan_context(
     patient_id: str,
     repo: DemoRepository,
 ) -> tuple[PatientSummary, ReviewResponse, PatientMemory]:
-    patient = repo.get_patient(patient_id)
-    if not patient:
-        raise HTTPException(
-            status_code=404,
-            detail={"code": "PATIENT_SCOPE_DENIED", "message": "Bệnh nhân không tồn tại hoặc không có quyền truy cập."},
-        )
+    patient = require_patient(repo, patient_id)
     approved_review = repo.get_review(patient_id)
     if (
         not approved_review

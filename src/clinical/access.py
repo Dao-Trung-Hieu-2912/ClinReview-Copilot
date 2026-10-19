@@ -1,6 +1,5 @@
 """Authentication and patient-assignment checks for the FHIR/PDF workflow."""
 
-import os
 from collections.abc import Mapping
 from typing import Protocol
 
@@ -20,9 +19,6 @@ class AssignmentProvider(Protocol):
     def can_access(self, context: AccessContext, patient_id: str) -> bool: ...
 
     def assert_access(self, context: AccessContext, patient_id: str) -> None: ...
-
-
-AssignmentChecker = AssignmentProvider
 
 
 class ConfiguredAuthProvider:
@@ -54,31 +50,3 @@ class ConfiguredAuthProvider:
             trace_id=getattr(request.state, "clinical_trace_id", ""),
         )
 
-
-class JwtAssignmentProvider:
-    def can_access(self, context: AccessContext, patient_id: str) -> bool:
-        return context.role == "ADMIN" or patient_id in context.assigned_patient_ids
-
-    def assert_access(self, context: AccessContext, patient_id: str) -> None:
-        if not self.can_access(context, patient_id):
-            raise ClinicalAccessDenied
-
-
-class DemoAssignmentProvider:
-    """Use only server-owned patient assignments in development and tests."""
-
-    def __init__(self, assignments: Mapping[str, set[str]], admin_users: set[str]) -> None:
-        self._assignments = {user_id: set(patient_ids) for user_id, patient_ids in assignments.items()}
-        self._admin_users = set(admin_users)
-
-    def can_access(self, context: AccessContext, patient_id: str) -> bool:
-        if context.role == "ADMIN":
-            return context.user_id in self._admin_users
-        return (
-            patient_id in self._assignments.get(context.user_id, set())
-            and patient_id in context.assigned_patient_ids
-        )
-
-    def assert_access(self, context: AccessContext, patient_id: str) -> None:
-        if not self.can_access(context, patient_id):
-            raise ClinicalAccessDenied

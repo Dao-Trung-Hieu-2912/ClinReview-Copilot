@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 from src.agents.adapter import AgentRequestAdapter
 from src.agents.graph import run_agent
 from src.api.auth_routes import DEFAULT_CLINICIAN
-from src.api.dependencies import get_demo_repository
+from src.api.dependencies import get_demo_repository, require_patient
 from src.clinical.canonical import ReviewResponse
 from src.clinical.demo_repository import DemoRepository
 from src.clinical.errors import ReviewPolicyError
@@ -55,11 +55,7 @@ def generate_review(
     payload: GenerateReviewRequest | None = None,
     repo: DemoRepository = Depends(get_demo_repository),
 ) -> ReviewResponse:
-    if not repo.get_patient(patient_id):
-        raise HTTPException(
-            status_code=404,
-            detail={"code": "PATIENT_SCOPE_DENIED", "message": "Bệnh nhân không tồn tại hoặc không có quyền truy cập."},
-        )
+    require_patient(repo, patient_id)
 
     profiles = payload.profile_versions if payload else ["type_2_diabetes@1.0.0"]
     request_id = request.headers.get("X-Request-ID") or f"req_{uuid4().hex}"
@@ -110,11 +106,7 @@ def get_review(
     ),
     repo: DemoRepository = Depends(get_demo_repository),
 ) -> ReviewResponse | Response:
-    if not repo.get_patient(patient_id):
-        raise HTTPException(
-            status_code=404,
-            detail={"code": "PATIENT_SCOPE_DENIED", "message": "Bệnh nhân không tồn tại hoặc không có quyền truy cập."},
-        )
+    require_patient(repo, patient_id)
 
     rev = repo.get_review(patient_id, version, review_version_id)
     if not rev:

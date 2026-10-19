@@ -90,6 +90,11 @@ def login(payload: LoginRequest, response: Response) -> UserMe:
             detail={"code": "AUTH_INVALID", "message": "Email hoặc mật khẩu không đúng."},
         )
 
+    _set_session_cookie(response, session, max_age)
+    return _get_user_me(username)
+
+
+def _set_session_cookie(response: Response, session: str, max_age: int) -> None:
     response.set_cookie(
         key=DEMO_SESSION_COOKIE,
         value=session,
@@ -99,8 +104,6 @@ def login(payload: LoginRequest, response: Response) -> UserMe:
         secure=False,
         path="/",
     )
-    return _get_user_me(username)
-
 
 
 @router.post("/demo-login", status_code=status.HTTP_204_NO_CONTENT)
@@ -113,15 +116,7 @@ def demo_login(payload: DemoLoginRequest, response: Response) -> Response:
         raise HTTPException(status_code=503, detail="Demo authentication is unavailable.")
 
     resp = Response(status_code=status.HTTP_204_NO_CONTENT)
-    resp.set_cookie(
-        key=DEMO_SESSION_COOKIE,
-        value=session,
-        max_age=max_age,
-        httponly=True,
-        samesite="lax",
-        secure=False,
-        path="/",
-    )
+    _set_session_cookie(resp, session, max_age)
     return resp
 
 

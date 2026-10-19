@@ -109,29 +109,20 @@ async def custom_swagger_ui_html():
 
 settings = get_settings()
 
-
-@app.exception_handler(ClinicalAccessDenied)
-async def access_denied_handler(request: Request, _error: ClinicalAccessDenied) -> JSONResponse:
-    return JSONResponse(
-        status_code=403,
-        content={"detail": "Access denied.", "trace_id": getattr(request.state, "clinical_trace_id", None)},
-    )
-
-
-@app.exception_handler(ClinicalAuthNotConfigured)
-async def auth_unavailable_handler(request: Request, _error: ClinicalAuthNotConfigured) -> JSONResponse:
-    return JSONResponse(
-        status_code=401,
-        content={"detail": "Authentication is required.", "trace_id": getattr(request.state, "clinical_trace_id", None)},
-    )
+def _clinical_error_handler(status_code: int, detail: str):
+    """Factory for clinical exception handlers with trace_id."""
+    async def handler(request: Request, _error) -> JSONResponse:
+        return JSONResponse(
+            status_code=status_code,
+            content={"detail": detail, "trace_id": getattr(request.state, "clinical_trace_id", None)},
+        )
+    return handler
 
 
-@app.exception_handler(ClinicalDatabaseUnavailable)
-async def runtime_unavailable_handler(request: Request, _error: ClinicalDatabaseUnavailable) -> JSONResponse:
-    return JSONResponse(
-        status_code=503,
-        content={"detail": "Runtime service is unavailable.", "trace_id": getattr(request.state, "clinical_trace_id", None)},
-    )
+app.add_exception_handler(ClinicalAccessDenied, _clinical_error_handler(403, "Access denied."))
+app.add_exception_handler(ClinicalAuthNotConfigured, _clinical_error_handler(401, "Authentication is required."))
+app.add_exception_handler(ClinicalDatabaseUnavailable, _clinical_error_handler(503, "Runtime service is unavailable."))
+
 
 
 app.add_middleware(

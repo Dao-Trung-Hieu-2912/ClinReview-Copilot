@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 from src.agents.adapter import AgentRequestAdapter
 from src.agents.graph import clinical_agent, run_agent
 from src.api.auth_routes import DEFAULT_CLINICIAN
-from src.api.dependencies import get_demo_repository
+from src.api.dependencies import get_demo_repository, require_patient
 from src.api.session_manager import ChatSession, session_manager
 from src.clinical.canonical import Citation
 from src.clinical.care_plan_agent import CarePlanResponse, care_plan_agent
@@ -109,12 +109,7 @@ async def ask_patient_chart(
     response: Response,
     repo: DemoRepository = Depends(get_demo_repository),
 ) -> AskResponse:
-    patient = repo.get_patient(patient_id)
-    if not patient:
-        raise HTTPException(
-            status_code=404,
-            detail={"code": "PATIENT_SCOPE_DENIED", "message": "Bệnh nhân không tồn tại hoặc không có quyền truy cập."},
-        )
+    patient = require_patient(repo, patient_id)
 
     if _is_care_plan_question(payload.question):
         approved_review = repo.get_review(patient_id)

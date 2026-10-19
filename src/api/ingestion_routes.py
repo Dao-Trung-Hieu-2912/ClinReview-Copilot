@@ -9,10 +9,13 @@ Security rules:
 - Agents never touch source files; they only receive EvidencePacket.
 """
 
+import json
+import uuid
+
 from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, UploadFile, status
 from pydantic import BaseModel, Field
 
-from src.api.dependencies import get_demo_repository
+from src.api.dependencies import get_demo_repository, require_patient
 from src.clinical.ai_document_parser import parse_clinical_markdown
 from src.clinical.demo_repository import DemoRepository
 from src.clinical.fhir_canonicalizer import canonicalize_fhir_bundle
@@ -47,6 +50,19 @@ def _get_vision_extractor() -> UniversalVisionExtractor:
         model_name=settings.llm_model_name,
         base_url=settings.llm_base_url or None,
     )
+
+
+def _extract_document(content: bytes, doc_id: str, is_image: bool):
+    """Extract document text via text layer or vision fallback."""
+    extraction = (
+        _get_vision_extractor().extract(content, doc_id)
+        if is_image
+        else _text_layer_extractor.extract(content, doc_id)
+    )
+    if not extraction.has_text_layer:
+        extraction = _get_vision_extractor().extract(content, doc_id)
+    full_markdown = "\n\n".join(p.full_text for p in extraction.pages if p.full_text)
+    return extraction, full_markdown
 
 
 class ProcessPatientRequest(BaseModel):
@@ -114,7 +130,6 @@ async def ingest_file(
         (".png", ".jpg", ".jpeg")
     )
     detected_format = "fhir_r4" if is_json else ("image" if is_image else "pdf")
-    import uuid
     temp_doc_id = f"doc_{uuid.uuid4().hex[:12]}"
     extraction = None
     parsed_doc = None
@@ -123,7 +138,6 @@ async def ingest_file(
     parsed_json_fhir = None
     if is_json:
         try:
-            import json
             parsed_json_fhir = json.loads(content)
             extracted_pid = None
             extracted_name = None
@@ -152,14 +166,7 @@ async def ingest_file(
             pass
     else:
         try:
-            extraction = (
-                _get_vision_extractor().extract(content, temp_doc_id)
-                if is_image
-                else _text_layer_extractor.extract(content, temp_doc_id)
-            )
-            if not extraction.has_text_layer:
-                extraction = _get_vision_extractor().extract(content, temp_doc_id)
-            full_markdown = "\n\n".join(p.full_text for p in extraction.pages if p.full_text)
+            extraction, full_markdown = _extract_document(content, temp_doc_id, is_image)
             parsed_doc = parse_clinical_markdown(full_markdown)
         except Exception:
             pass
@@ -257,7 +264,6 @@ async def ingest_file(
     # ------------------------------------------------------------------
     if is_json:
         try:
-            import json
             evidence_items = canonicalize_fhir_bundle(
                 json.loads(content), patient_id=target_pid, tenant_id="ten_demo",
                 document_id=stored_doc.document_id, source_checksum=stored_doc.checksum,
@@ -275,14 +281,7 @@ async def ingest_file(
     else:
         if extraction is None or not extraction.pages:
             try:
-                extraction = (
-                    _get_vision_extractor().extract(content, stored_doc.document_id)
-                    if is_image
-                    else _text_layer_extractor.extract(content, stored_doc.document_id)
-                )
-                if not extraction.has_text_layer:
-                    extraction = _get_vision_extractor().extract(content, stored_doc.document_id)
-                full_markdown = "\n\n".join(p.full_text for p in extraction.pages if p.full_text)
+                extraction, full_markdown = _extract_document(content, stored_doc.document_id, is_image)
                 if not parsed_doc:
                     parsed_doc = parse_clinical_markdown(full_markdown)
             except Exception as exc:
@@ -417,12 +416,7 @@ def process_patient(
     payload: ProcessPatientRequest,
     repo: DemoRepository = Depends(get_demo_repository),
 ) -> ProcessPatientResponse:
-    if not repo.get_patient(patient_id):
-        raise HTTPException(
-            status_code=404,
-            detail={"code": "PATIENT_SCOPE_DENIED", "message": "Bệnh nhân không tồn tại hoặc không có quyền truy cập."},
-        )
-
+    require_patient(repo, patient_id)
     wm = repo.get_watermark(patient_id)
     return ProcessPatientResponse(
         process_id=f"proc_{patient_id}_01",

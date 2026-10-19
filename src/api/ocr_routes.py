@@ -8,7 +8,7 @@ from functools import lru_cache
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, Field
 
-from src.api.dependencies import get_demo_repository
+from src.api.dependencies import get_demo_repository, require_patient
 from src.clinical.canonical import VerificationItem
 from src.clinical.demo_repository import DemoRepository
 
@@ -93,18 +93,23 @@ def _demo_document_index() -> dict[str, pathlib.Path]:
     return index
 
 
+_MEDIA_TYPES = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".json": "application/json",
+}
+
+
+def _detect_media_type(filename_or_path: str | pathlib.Path) -> str:
+    suffix = pathlib.Path(filename_or_path).suffix.casefold()
+    return _MEDIA_TYPES.get(suffix, "application/pdf")
+
+
 def _inline_file_response(file_path: pathlib.Path) -> Response:
-    suffix = file_path.suffix.casefold()
-    media_type = "application/pdf"
-    if suffix in (".png",):
-        media_type = "image/png"
-    elif suffix in (".jpg", ".jpeg"):
-        media_type = "image/jpeg"
-    elif suffix in (".json",):
-        media_type = "application/json"
     return Response(
         content=file_path.read_bytes(),
-        media_type=media_type,
+        media_type=_detect_media_type(file_path),
         headers={
             "Content-Disposition": f'inline; filename="{file_path.name}"',
             "Cache-Control": "public, max-age=3600",
@@ -143,12 +148,7 @@ def get_verification_items(
     page_size: int = Query(default=20, ge=1, le=100),
     repo: DemoRepository = Depends(get_demo_repository),
 ) -> VerificationListResponse:
-    if not repo.get_patient(patient_id):
-        raise HTTPException(
-            status_code=404,
-            detail={"code": "PATIENT_SCOPE_DENIED", "message": "Bệnh nhân không tồn tại hoặc không có quyền truy cập."},
-        )
-
+    require_patient(repo, patient_id)
     items, total = repo.list_verification_items(patient_id, status, page, page_size)
     return VerificationListResponse(items=items, page=page, page_size=page_size, total=total)
 
@@ -205,18 +205,9 @@ def get_document_raw(document_id: str) -> Response:
     from src.api.ingestion_routes import _ingestion_service
     stored = _ingestion_service.document_store.get(document_id)
     if stored and stored.content:
-        name_lower = stored.document_name.lower()
-        media_type = "application/pdf"
-        if name_lower.endswith(".png"):
-            media_type = "image/png"
-        elif name_lower.endswith(".jpg") or name_lower.endswith(".jpeg"):
-            media_type = "image/jpeg"
-        elif name_lower.endswith(".json"):
-            media_type = "application/json"
-
         return Response(
             content=stored.content,
-            media_type=media_type,
+            media_type=_detect_media_type(stored.document_name),
             headers={
                 "Content-Disposition": f'inline; filename="{stored.document_name}"',
                 "Cache-Control": "public, max-age=3600",
