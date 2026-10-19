@@ -297,7 +297,7 @@ def test_risky_queries_trigger_clinical_safety_advisory() -> None:
 def test_all_lab_indicators_route_to_tool_without_missing_info_loop(question: str) -> None:
     from src.agents.contracts import AgentRequest
     from src.agents.graph import run_agent
-    from src.agents.policy import classify_prompt_category, RequestCategory
+    from src.agents.policy import RequestCategory, classify_prompt_category
 
     # 1. Policy layer must classify as TOOL, not MISSING_INFO
     classified = classify_prompt_category(question, "PAT-001")

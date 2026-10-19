@@ -413,18 +413,7 @@ class DemoRepository:
 
 
 
-    def create_blank_patient(self, patient_id: str, name: str) -> PatientSummary:
-        patient = PatientSummary(
-            patient_id=patient_id,
-            pseudonym=name,
-            sex="unknown",
-            age=None,
-            primary_condition="Chưa có dữ liệu",
-            last_encounter_at=None,
-            latest_data_watermark=self.get_watermark(patient_id),
-        )
-        self._patients[patient_id] = patient
-        return patient
+
 
     def delete_patient(self, patient_id: str) -> bool:
         """Deletes the patient and all associated state from the repository.
@@ -634,7 +623,7 @@ class DemoRepository:
                 if matched:
                     raw_v = res.get("valueQuantity", {}).get("value")
                     raw_u = res.get("valueQuantity", {}).get("unit", "")
-                    
+
                     if display_name == code:
                         display_name = res.get("code", {}).get("text") or (codings[0].get("display") if codings else code)
                     if not target_unit:

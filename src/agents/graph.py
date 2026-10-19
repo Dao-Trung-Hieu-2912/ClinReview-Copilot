@@ -1,26 +1,16 @@
-from typing import Any
 import logging
-import uuid
-
-logger = logging.getLogger(__name__)
-from langgraph.graph import END, START, StateGraph
-from langgraph.checkpoint.memory import MemorySaver
 import os
+import uuid
+from typing import Any
 
-try:
-    from langgraph.checkpoint.sqlite import SqliteSaver
-    import sqlite3
-    os.makedirs(".data", exist_ok=True)
-    conn = sqlite3.connect(".data/checkpoints.sqlite", check_same_thread=False)
-    checkpointer = SqliteSaver(conn)
-except ImportError:
-    checkpointer = MemorySaver()
+from langgraph.checkpoint.memory import MemorySaver
+from langgraph.graph import END, START, StateGraph
 
 from src.agents.contracts import AgentError, AgentRequest, AgentResult
 from src.agents.nodes.clinical_nodes import (
     abstain_node,
-    contextualize_question_node,
     classify_question_node,
+    contextualize_question_node,
     finalize_response_node,
     generate_grounded_node,
     retrieve_evidence_node,
@@ -29,6 +19,19 @@ from src.agents.nodes.clinical_nodes import (
 )
 from src.agents.nodes.example_node import analyze_node, respond_node, validate_node
 from src.agents.state import AgentState, ClinicalReviewState, RuntimeScope
+
+logger = logging.getLogger(__name__)
+
+try:
+    import sqlite3
+
+    from langgraph.checkpoint.sqlite import SqliteSaver
+
+    os.makedirs(".data", exist_ok=True)
+    conn = sqlite3.connect(".data/checkpoints.sqlite", check_same_thread=False)
+    checkpointer = SqliteSaver(conn)
+except ImportError:
+    checkpointer = MemorySaver()
 
 
 def should_continue(state: AgentState) -> str:
@@ -189,7 +192,7 @@ def run_agent(
         result = state.get("public_response")
         if isinstance(result, AgentResult):
             return result
-    except Exception as e:
+    except Exception:
         logger.exception(
             "Agent execution failed",
             extra={

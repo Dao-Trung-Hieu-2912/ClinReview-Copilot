@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
-import re
-from src.agents.retrieval.concepts import fold as _fold, get_concept
+
+from src.agents.retrieval.concepts import fold as _fold
+from src.agents.retrieval.concepts import get_concept, resolve_concept
 
 if TYPE_CHECKING:
     from src.agents.evidence import ScopedEvidence
@@ -22,13 +24,11 @@ SUMMARY_DOMAINS = (
     "symptom",
 )
 
-def _candidate_text(candidate: "RetrievalCandidate") -> str:
+def _candidate_text(candidate: RetrievalCandidate) -> str:
     item = candidate.scoped.item
     snippets = " ".join(citation.snippet for citation in item.citations)
     return _fold(f"{item.fact_type} {item.normalized_value} {item.source_value} {snippets}")
 
-
-from src.agents.retrieval.concepts import fold as _fold, get_concept, resolve_concept
 
 def _entity_aliases(entity: str) -> tuple[str, ...]:
     concept = get_concept(entity) or resolve_concept(entity)
@@ -129,8 +129,9 @@ class SafeTool:
 
     def execute_summary(self, limit: int) -> list[RetrievalCandidate]:
         """Prioritize clinical domains based on medical severity (warnings) and diagnosis relevance."""
-        from src.clinical.guidelines import parse_and_evaluate_metric, DIAGNOSIS_TO_METRICS
         import datetime
+
+        from src.clinical.guidelines import DIAGNOSIS_TO_METRICS, parse_and_evaluate_metric
 
         active_conditions_text = ""
         for c in self.packet:
@@ -145,7 +146,7 @@ class SafeTool:
             src = candidate.scoped.item.source_value
             nv = candidate.scoped.item.normalized_value
             src_text = (" ".join(str(v) for v in src.values()) if isinstance(src, dict) else str(src)).casefold()
-            
+
             # Base domain scores
             if "diagnosis" in fact_type or "condition" in fact_type:
                 score += 30.0
@@ -169,14 +170,14 @@ class SafeTool:
                 elif isinstance(nv, str):
                     name = nv.split(":")[0] if ":" in nv else nv
                     val = nv
-                
+
                 if name:
                     # Relevance to diagnosis
                     for diag_key, codes in DIAGNOSIS_TO_METRICS.items():
                         if diag_key in active_conditions_text:
                             if any(c in name.casefold() for c in codes) or any(c in src_text for c in codes):
                                 score += 40.0
-                    
+
                     # Anomaly check
                     eval_result = parse_and_evaluate_metric(name, val, unit)
                     if eval_result and eval_result.is_warning:
@@ -189,7 +190,8 @@ class SafeTool:
                     dt = datetime.datetime.fromisoformat(str(time_str).replace("Z", "+00:00"))
                     now = datetime.datetime.now(dt.tzinfo) if dt.tzinfo else datetime.datetime.now()
                     days_old = (now - dt).days
-                    if days_old < 0: days_old = 0
+                    if days_old < 0:
+                        days_old = 0
                     score += max(0, 10 - (days_old / 30.0))
                 except Exception:
                     pass
@@ -198,11 +200,11 @@ class SafeTool:
 
         scored = [(c, score_candidate(c)) for c in self.packet]
         scored.sort(key=lambda x: x[1], reverse=True)
-        
+
         # Select top items ensuring at least some diversity if possible
         selected = []
         seen_domains = set()
-        
+
         # First pass: try to get the top scored items while capturing top 3 unique domains
         for c, s in scored:
             domain = next((d for d in SUMMARY_DOMAINS if self._matches(c, d)), "other")
@@ -210,14 +212,14 @@ class SafeTool:
                 if domain not in seen_domains and len(seen_domains) < 3:
                     selected.append(c)
                     seen_domains.add(domain)
-        
+
         # Second pass: fill the rest with highest scored items not yet selected
         for c, s in scored:
             if len(selected) >= limit:
                 break
             if c not in selected:
                 selected.append(c)
-                
-        # Maintain chronological order for readability if they are roughly same score, 
+
+        # Maintain chronological order for readability if they are roughly same score,
         # but here we just return the highest clinical priority first
         return selected

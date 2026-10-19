@@ -9,11 +9,9 @@ from src.clinical.access import AuthProvider
 from src.clinical.audit import AuditSink, CompositeAuditSink, StructuredAuditSink
 from src.clinical.demo_auth import DemoSessionProvider
 from src.clinical.demo_repository import DemoRepository
-from src.clinical.errors import ClinicalDatabaseUnavailable
 from src.clinical.operations import OperationalStore, operational_store
 from src.clinical.schemas import AccessContext
 from src.config import get_settings
-
 
 _PATIENT_SCOPE_DENIED = {
     "code": "PATIENT_SCOPE_DENIED",

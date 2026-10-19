@@ -1,6 +1,9 @@
-from typing import Literal, Any
 import re
-from pydantic import BaseModel, Field
+from datetime import UTC
+from typing import Any, Literal
+
+from pydantic import BaseModel, Field, field_validator
+
 from src.agents.llm_client import get_llm_runtime
 from src.agents.retrieval.concepts import resolve_concept
 
@@ -43,15 +46,16 @@ _LOW_INFORMATION_TERMS = {
 def _is_vague_missing_info_query(question: str) -> tuple[bool, str]:
     q_lower = question.lower()
     entity = _extract_entity(question)
-    
+
     # Exclude requests for "all" or specific patient indicators
     if any(k in q_lower for k in ["tất cả", "toàn bộ", "các", "của bệnh nhân", "những", "danh sách"]):
         return False, "none"
-        
+
     # "Can you fix it?" or other vague questions without clear entities
     if "fix it" in q_lower or ("thế nào" in q_lower and not any(k in q_lower for k in ["tình trạng", "bệnh nhân", "sức khỏe"])):
-        if not entity: return True, "all"
-        
+        if not entity:
+            return True, "all"
+
     return False, "none"
 
 
@@ -93,7 +97,6 @@ def _relative_months(question: str) -> int | None:
             return value
     return None
 
-from pydantic import BaseModel, Field, field_validator
 
 class TemporalIntent(BaseModel):
     intent: Literal["latest", "earliest", "previous", "before", "after", "between", "trend", "none"] = "none"
@@ -126,14 +129,18 @@ class RetrievalPlan(BaseModel):
     comparison_required: bool = False
     strict_intent: StrictIntent = "NONE"
     extracted_entity: str | None = None
-    
+
     @property
     def route(self) -> str:
         """Helper to map back to legacy QueryRoute for compatibility, or return a custom one."""
-        if self.task_type in {"conversation", "conversation_reference", "clarification"}: return "CONVERSATION"
-        if self.task_type == "summary": return "SUMMARY"
-        if self.task_type == "conflict_check": return "MIXED"
-        if self.task_type == "out_of_scope": return "OUT_OF_SCOPE"
+        if self.task_type in {"conversation", "conversation_reference", "clarification"}:
+            return "CONVERSATION"
+        if self.task_type == "summary":
+            return "SUMMARY"
+        if self.task_type == "conflict_check":
+            return "MIXED"
+        if self.task_type == "out_of_scope":
+            return "OUT_OF_SCOPE"
         # For clinical_question, figure out the best route mapping for legacy evidence.py
         if any(n.temporal.intent != "none" for n in self.needs):
             return "TEMPORAL"
@@ -145,12 +152,12 @@ class RetrievalPlan(BaseModel):
 
 class PlanValidator:
     """Validates the LLM-generated plan deterministically."""
-    
+
     def validate(self, plan: RetrievalPlan, question: str = "") -> RetrievalPlan:
         # Check for empty plan
         if not plan:
             return self._fallback_plan(question)
-            
+
         # Allowed domains
         allowed_domains = {"diagnosis", "medication", "lab", "vital", "encounter", "note", "procedure", "symptom", "all"}
         for need in plan.needs:
@@ -160,7 +167,7 @@ class PlanValidator:
                     task_type="clinical_question", needs=[DomainNeed(domain="all")],
                     use_structured=True, use_semantic=True, use_lexical=True,
                 )
-                
+
         # If task is conversation but retrieval is required, that's fine, but usually it shouldn't be.
         if plan.task_type in {"conversation", "clarification"}:
             plan.retrieval_required = False
@@ -175,7 +182,7 @@ class PlanValidator:
         for need in plan.needs:
             if need.entity:
                 c = resolve_concept(need.entity)
-                
+
                 # If domain is lab but entity is medication, drop the entity because it's context bleed
                 if c and need.domain == "lab" and c.domain == "medication":
                     need.entity = None
@@ -201,9 +208,9 @@ class PlanValidator:
         if plan.comparison_required:
             for need in plan.needs:
                 need.temporal.intent = "trend"
-            
+
         return plan
-        
+
     def _fallback_plan(self, question: str = "") -> RetrievalPlan:
         q = question.lower()
         domain: Literal["diagnosis", "medication", "lab", "vital", "encounter", "note", "procedure", "symptom", "all"] = "all"
@@ -216,7 +223,7 @@ class PlanValidator:
 
         if _is_low_information(q) or not _has_clinical_signal(q):
             return RetrievalPlan(task_type="clarification", strict_intent="UNKNOWN", retrieval_required=False)
-        
+
         # Domain parsing
         q_clean = q.replace("bệnh nhân", "").replace("bệnh án", "")
         concept = resolve_concept(q)
@@ -274,7 +281,7 @@ class PlanValidator:
             ))
             if is_full_lab_listing and concept is None:
                 entity = None
-                
+
         # Temporal parsing
         if comparison_required or any(marker in q for marker in _TREND_MARKERS + ("biến động", "biến chuyển")):
             intent = "trend"
@@ -282,24 +289,24 @@ class PlanValidator:
             intent = "latest"
         elif "trước đó" in q or "lần trước" in q:
             intent = "previous"
-            
-        from datetime import datetime, timedelta, timezone
-        
+
+        from datetime import datetime, timedelta
+
         # check "N tháng gần đây" / "N tháng qua"
         m = re.search(r"(\d+)\s*tháng\s*(gần đây|qua)", q)
         if m:
             if intent == "none":
                 intent = "trend"
             months = int(m.group(1))
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             start = now - timedelta(days=30*months)
             start_time = start.isoformat()
             end_time = now.isoformat()
-            
+
         # check "trước <date>" or "sau <date>" or "từ <date> đến <date>"
         # Using a very basic regex for dates like YYYY-MM-DD or DD/MM/YYYY for the fallback
         date_pattern = r"(\d{1,4}[-/]\d{1,2}[-/]\d{1,4})"
-        
+
         m_between = re.search(r"từ\s+" + date_pattern + r"\s+đến\s+" + date_pattern, q)
         if m_between:
             intent = "between"
@@ -311,13 +318,13 @@ class PlanValidator:
                 intent = "before"
                 start_time = None
                 end_time = m_before.group(1)
-                
+
             m_after = re.search(r"sau\s+" + date_pattern, q)
             if m_after:
                 intent = "after"
                 start_time = m_after.group(1)
                 end_time = None
-            
+
         needs = [DomainNeed(
             domain=domain, entity=entity,
             temporal=TemporalIntent(
@@ -357,13 +364,13 @@ class QueryPlanner:
         self.structured_keywords = {"hba1c", "glucose", "lab", "xét nghiệm", "chỉ số", "medication", "thuốc", "liều lượng"}
         self.conversational_keywords = _CONVERSATION_MARKERS
         self.validator = PlanValidator()
-        
+
     def plan(self, question: str) -> RetrievalPlan:
         if not question or not question.strip():
             return RetrievalPlan(task_type="clarification", strict_intent="UNKNOWN", retrieval_required=False)
-            
+
         q = question.lower().strip()
-        
+
         # 1. Fast path: conversational
         has_language_content = re.search(r"\w", q, flags=re.UNICODE) is not None
         if not has_language_content:
@@ -403,10 +410,10 @@ class QueryPlanner:
             ), question)
 
         deterministic = self.validator._fallback_plan(question)
-        
+
         # 3. Strict Intents (from Task 1)
         is_dated_query = bool(deterministic.needs and deterministic.needs[0].temporal.intent in {"before", "after", "between"})
-        
+
         if any(marker in q for marker in [
             "tình trạng nào", "không ổn định", "cảnh báo", "bất thường", "có vấn đề gì",
             "abnormal", "high", "low", "warning", "critical",
@@ -459,11 +466,11 @@ class QueryPlanner:
             needs and needs[0].domain != "diagnosis" and needs[0].domain != "all"
         ):
             return self.validator.validate(deterministic, question)
-            
+
         # 4. LLM Planner for ambiguous cases
         llm_plan = self._llm_plan(question)
         return self.validator.validate(llm_plan, question)
-        
+
     def _llm_plan(self, question: str) -> RetrievalPlan:
         """Call LLM client to parse the plan. For this phase we integrate with llm_client."""
         runtime = get_llm_runtime()
@@ -476,7 +483,7 @@ class QueryPlanner:
             parsed = None
         if not parsed:
             return self.validator._fallback_plan(question)
-            
+
         try:
             return RetrievalPlan.model_validate(parsed)
         except Exception as e:

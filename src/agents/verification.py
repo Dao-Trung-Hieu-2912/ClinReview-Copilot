@@ -121,18 +121,18 @@ def verify_claim(
     citations_exist = evidence_exists and all(item.item.citations for item in matched)
     has_injection = any(is_prompt_injection_content(item.item) for item in matched)
     no_injection = not has_injection
-    
+
     # Exactness check over ALL tokens in ALL matched evidence combined
     all_tokens = []
     for item in matched:
         all_tokens.extend(_verification_tokens(item))
-    
+
     is_conflict_claim = "conflict" in proposed.claim_id.casefold() or any("conflict" in item.item.fact_type.casefold() for item in matched)
     is_trend_claim = "trend" in proposed.claim_id.casefold() or "comparison" in proposed.claim_id.casefold()
     is_exact_statement = any(
         _normalized_statement(item) == proposed.text for item in matched
     )
-    
+
     is_med_or_cond = proposed.section_code in {"current_medications", "active_conditions", "patient_overview"}
     exactness = evidence_exists and (
         is_conflict_claim
@@ -142,7 +142,7 @@ def verify_claim(
         or all(token.casefold() in proposed.text.casefold() for token in all_tokens)
     )
     negation = evidence_exists and all(_preserves_negation(proposed.text, item) for item in matched)
-    
+
     checks = {
         "evidence_exists": evidence_exists,
         "citations_exist": citations_exist,
@@ -150,9 +150,9 @@ def verify_claim(
         "negation_preserved": negation,
         "prompt_injection_ignored": no_injection,
     }
-    
+
     statements = [_normalized_statement(item) for item in matched if _normalized_statement(item)]
-    
+
     if not all(checks.values()):
         checks["entailed"] = False
         reasons = tuple(name for name, passed in checks.items() if not passed)
@@ -169,15 +169,15 @@ def verify_claim(
     import re
     def get_words(text):
         return set(re.findall(r"[\w]+", text.casefold()))
-    
+
     proposed_words = get_words(proposed.text)
     combined_statement = " ".join(statements)
     statement_words = get_words(combined_statement)
-    
+
     # If a good amount of meaningful words overlap, consider it supported (Layer 2)
     overlap = len(proposed_words.intersection(statement_words))
     entailment = False
-    
+
     if is_conflict_claim or is_trend_claim or is_exact_statement:
         entailment = True
     elif len(proposed_words) > 0 and (overlap / len(proposed_words)) > 0.5:
@@ -185,10 +185,10 @@ def verify_claim(
     else:
         # LAYER 3: Semantic Entailment Fallback
         entailment = verify_entailment_llm(proposed.text, statements)
-        
+
     checks["entailed"] = entailment
     reasons = tuple(name for name, passed in checks.items() if not passed)
-    
+
     if not entailment:
         return None, ClaimVerification(
             claim_id=proposed.claim_id,

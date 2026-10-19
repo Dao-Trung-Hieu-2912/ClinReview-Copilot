@@ -20,7 +20,7 @@ from io import BytesIO
 from pathlib import Path
 
 from reportlab.lib import colors
-from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
+from reportlab.lib.enums import TA_CENTER, TA_LEFT
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
@@ -422,7 +422,7 @@ def generate_review_pdf(review: ReviewResponse, patient: PatientSummary | None =
         author="Clinical Review Copilot",
         subject="Bản tóm tắt điều trị đã được bác sĩ phê duyệt",
     )
-    S = _styles()
+    S = _styles()  # noqa: N806
     story: list = []
 
     # ── I. Header & Identity Block ────────────────────────────────────────────

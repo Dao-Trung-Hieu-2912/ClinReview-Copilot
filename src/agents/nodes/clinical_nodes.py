@@ -342,7 +342,7 @@ def generate_grounded_node(state: ClinicalReviewState) -> dict:
 
 def verify_claims_node(state: ClinicalReviewState) -> dict:
     import sys
-    print(f"\nDEBUG verify_claims_node:", file=sys.stderr)
+    print("\nDEBUG verify_claims_node:", file=sys.stderr)
     print(f"proposed_claims: {len(state.get('proposed_claims', []))}", file=sys.stderr)
     print(f"retrieved_evidence: {len(state.get('retrieved_evidence', []))}", file=sys.stderr)
     print(f"question_type: {state.get('question_type')}", file=sys.stderr)

@@ -418,7 +418,7 @@ b.addEventListener('click', () => {{
     audio.pause();
     return;
   }}
-  
+
   if (isSynthSpeaking) {{
     window.speechSynthesis.cancel();
     isSynthSpeaking = false;

@@ -6,8 +6,8 @@ import pdfplumber
 import pytest
 from pypdf import PdfReader
 
-from src.api.dependencies import get_demo_repository
 import src.clinical.care_plan_agent as care_plan_module
+from src.api.dependencies import get_demo_repository
 from src.clinical.canonical import PatientMemory
 from src.clinical.care_plan_agent import CarePlanDraft, care_plan_agent
 from src.clinical.care_plan_share import care_plan_share_store

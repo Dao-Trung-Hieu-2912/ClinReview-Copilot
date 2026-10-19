@@ -1,12 +1,11 @@
 """Authentication and patient-assignment checks for the FHIR/PDF workflow."""
 
-from collections.abc import Mapping
 from typing import Protocol
 
 import jwt
 from fastapi import Request
 
-from src.clinical.errors import ClinicalAccessDenied, ClinicalAuthNotConfigured
+from src.clinical.errors import ClinicalAccessDenied
 from src.clinical.schemas import AccessContext
 from src.config import get_settings
 

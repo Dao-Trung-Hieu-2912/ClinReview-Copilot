@@ -1,7 +1,9 @@
-from typing import Literal, Any
-from datetime import datetime
 import re
+from datetime import UTC, datetime
+from typing import Any, Literal
+
 from pydantic import BaseModel
+
 
 class TemporalQuery(BaseModel):
     intent: Literal["latest", "earliest", "previous", "before", "after", "between", "trend", "none"]
@@ -14,25 +16,24 @@ def _parse_time(time_str: str | None) -> datetime | None:
     if not time_str:
         return None
     time_str = time_str.strip()
-    from datetime import timezone
     # Try DD/MM/YYYY
     m = re.match(r"^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$", time_str)
     if m:
         try:
-            return datetime(int(m.group(3)), int(m.group(2)), int(m.group(1)), tzinfo=timezone.utc)
+            return datetime(int(m.group(3)), int(m.group(2)), int(m.group(1)), tzinfo=UTC)
         except ValueError:
             pass
     # Try YYYY-MM-DD
     m = re.match(r"^(\d{4})[/.-](\d{1,2})[/.-](\d{1,2})$", time_str)
     if m:
         try:
-            return datetime(int(m.group(1)), int(m.group(2)), int(m.group(3)), tzinfo=timezone.utc)
+            return datetime(int(m.group(1)), int(m.group(2)), int(m.group(3)), tzinfo=UTC)
         except ValueError:
             pass
     try:
         dt = datetime.fromisoformat(time_str.replace("Z", "+00:00"))
         if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
+            dt = dt.replace(tzinfo=UTC)
         return dt
     except ValueError:
         return None
@@ -57,11 +58,11 @@ def filter_temporal(evidence_items: list[Any], query: TemporalQuery) -> list[Any
 
     if query.intent == "earliest":
         return [item for _, item in valid_items[:query.k]]
-    
+
     if query.intent == "latest":
         valid_items.sort(key=lambda x: x[0], reverse=True)
         return [item for _, item in valid_items[:query.k]]
-        
+
     if query.intent == "previous":
         valid_items.sort(key=lambda x: x[0], reverse=True)
         if not valid_items:
@@ -76,7 +77,7 @@ def filter_temporal(evidence_items: list[Any], query: TemporalQuery) -> list[Any
         previous_date = dates[1]
         previous_items = [(t, item) for t, item in valid_items if t.date() == previous_date]
         return [item for _, item in previous_items[:query.k]]
-        
+
     if query.intent == "before":
         target = query.target_time or query.end_time
         if target:
@@ -87,7 +88,7 @@ def filter_temporal(evidence_items: list[Any], query: TemporalQuery) -> list[Any
             latest_date = filtered[0][0].date()
             same_day_items = [i for t, i in filtered if t.date() == latest_date]
             return same_day_items[:query.k]
-        
+
     if query.intent == "after":
         target = query.target_time or query.start_time
         if target:
@@ -98,11 +99,11 @@ def filter_temporal(evidence_items: list[Any], query: TemporalQuery) -> list[Any
             earliest_date = filtered[0][0].date()
             same_day_items = [i for t, i in filtered if t.date() == earliest_date]
             return same_day_items[:query.k]
-        
+
     if query.intent == "between" and query.start_time and query.end_time:
         filtered = [(t, i) for t, i in valid_items if query.start_time <= t <= query.end_time]
         return [item for _, item in filtered]
-        
+
     if query.intent == "trend":
         # Return chronologically ordered
         return [item for _, item in valid_items]

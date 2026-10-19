@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from enum import Enum
+from enum import StrEnum
 from typing import Literal
 
 from src.agents.contracts import AgentRequest
@@ -99,9 +99,8 @@ _PROMPT_OVERRIDE = re.compile(
 )
 
 
-from enum import StrEnum
 
-class RequestCategory(str, Enum):
+class RequestCategory(StrEnum):
     SIMPLE = "SIMPLE"              # Chào hỏi, danh tính, lịch sử, văn bản rác/chưa rõ
     CLINICAL = "CLINICAL"          # Tra cứu bệnh án, xét nghiệm, chẩn đoán, thuốc
     NOT_ALLOWED = "NOT_ALLOWED"    # Kê đơn mới, can thiệp sửa đổi bệnh án
@@ -145,14 +144,14 @@ def classify_prompt_category(query: str, patient_id: str = "") -> dict:
     capability_keywords = ["bạn là ai", "ban la ai", "bạn làm được gì", "khả năng của bạn", "giúp được gì", "chức năng của bạn", "ban lam duoc gi", "ban co the lam gi"]
     greeting_keywords = ["chào", "chao", "hello", "hi", "alo", "hey", "ê", "có ai không", "co ai khong", "buổi sáng", "buổi chiều", "buổi tối", "cảm ơn", "cam on", "thanks", "thank you", "tạm biệt", "tam biet", "bye", "goodbye"]
     words = no_accent_q.split()
-    
+
     if any(kw in clean_q or kw in no_accent_q for kw in identity_keywords):
         return {
             "category": RequestCategory.SIMPLE,
             "intent": "user_identity",
             "reasoning": "Hỏi về danh tính/vai trò của người dùng.",
         }
-        
+
     if any(kw in clean_q or kw in no_accent_q for kw in capability_keywords) or (len(words) <= 7 and any(kw in clean_q or kw in no_accent_q for kw in greeting_keywords)):
         return {
             "category": RequestCategory.SIMPLE,

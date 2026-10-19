@@ -12,8 +12,8 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from src.agents.contracts import AgentRequest, Citation, EvidenceItem
-from src.agents.retrieval.temporal import filter_temporal, filter_comparison_endpoints, TemporalQuery, _parse_time
 from src.agents.retrieval.fusion import BaselineWeightedReranker
+from src.agents.retrieval.temporal import TemporalQuery, _parse_time, filter_comparison_endpoints, filter_temporal
 from src.agents.retrieval.tools import RetrievalCandidate, SafeTool
 
 
@@ -213,57 +213,7 @@ def _record_status(payload: dict[str, Any], item: EvidenceItem) -> str | None:
     return None
 
 
-def _to_evidence_item(payload: dict[str, Any]) -> EvidenceItem:
-    fields = EvidenceItem.model_fields
-    contract_payload = {key: payload[key] for key in fields if key in payload}
-    return EvidenceItem.model_validate(contract_payload)
 
-
-def build_scoped_evidence(request: AgentRequest) -> list[ScopedEvidence]:
-    """Validate the complete packet before retrieval and fail closed on leakage."""
-    packet: list[ScopedEvidence] = []
-    for raw in request.structured_facts:
-        item = _to_evidence_item(raw)
-        patient_id = str(raw.get("patient_id", request.patient_id))
-        tenant_id = str(raw.get("tenant_id", request.tenant_id))
-        packet.append(
-            ScopedEvidence(
-                item=item,
-                origin="structured",
-                patient_id=patient_id,
-                tenant_id=tenant_id,
-                record_status=_record_status(raw, item),
-            )
-        )
-    packet.extend(
-        ScopedEvidence(
-            item=item,
-            origin="note",
-            patient_id=request.patient_id,
-            tenant_id=request.tenant_id,
-            record_status=_record_status({}, item),
-        )
-        for item in request.note_evidence
-    )
-
-    for scoped in packet:
-        if scoped.patient_id != request.patient_id or scoped.tenant_id != request.tenant_id:
-            raise EvidenceScopeError("Evidence packet scope does not match the locked request scope.")
-        tokens = _scope_tokens(scoped.item)
-        if tokens and tokens != {request.patient_id.upper()}:
-            raise EvidenceScopeError("Evidence packet contains a foreign patient identifier.")
-    return packet
-
-
-def is_prompt_injection_content(item: EvidenceItem) -> bool:
-    """Detect untrusted instructions for telemetry/tests; never execute them."""
-    content = f"{item.fact_type} {item.source_value} {item.normalized_value}".casefold()
-    return any(pattern in content for pattern in _INJECTION_PATTERNS)
-
-
-def _search_text(item: EvidenceItem) -> str:
-    snippets = " ".join(citation.snippet for citation in item.citations)
-    return f"{item.fact_type} {item.normalized_value} {item.source_value} {snippets}".casefold()
 
 
 def _terms(value: str) -> set[str]:
@@ -313,25 +263,25 @@ def retrieve_evidence(
     """Filter, rank, and deduplicate using deterministic hybrid retrieval or RetrievalPlan."""
     if route == "not_allowed":
         return []
-        
+
     # 1. Base candidates filtering
     candidates = [
         scoped
         for scoped in packet
         if scoped.record_status not in {"entered-in-error", "entered-inerror"}
     ]
-    
+
     if not candidates:
         return []
-        
+
     # Parse plan if provided as dict
     plan_dict = route if isinstance(route, dict) else None
-    
+
     if plan_dict and not plan_dict.get("retrieval_required", True):
         return []
 
     wrapped_candidates = [RetrievalCandidate(c) for c in candidates]
-    
+
     # 2. Strict Intent Filtering (if present)
     if plan_dict and plan_dict.get("strict_intent", "NONE") != "NONE":
         strict_intent = plan_dict["strict_intent"]
@@ -343,7 +293,7 @@ def retrieve_evidence(
                 latest_metrics = [c for c in candidates if c.item.source_time and c.item.source_time.startswith(max_time) and str(c.item.fact_type).casefold() in {"lab", "vital"}]
                 return diagnoses + latest_metrics
             return diagnoses
-            
+
         elif strict_intent == "WARNING_STATUS":
             times = [c.item.source_time for c in candidates if c.item.source_time]
             if not times:
@@ -362,48 +312,48 @@ def retrieve_evidence(
                         if eval_res and eval_res.is_warning:
                             warnings.append(c)
             return warnings
-            
+
         elif strict_intent == "LATEST_VISIT":
             times = [c.item.source_time for c in candidates if c.item.source_time]
             if not times:
                 return []
             max_time = max(times)[:10]
             return [c for c in candidates if c.item.source_time and c.item.source_time.startswith(max_time)]
-            
+
         elif strict_intent == "PREVIOUS_VISIT":
             times = sorted(list({c.item.source_time[:10] for c in candidates if c.item.source_time}), reverse=True)
             if len(times) < 2:
                 return []
             prev_time = times[1]
             return [c for c in candidates if c.item.source_time and c.item.source_time.startswith(prev_time)]
-            
+
         elif strict_intent == "SPECIFIC_TEST":
             entity = plan_dict.get("extracted_entity")
             if not entity:
                 return []
             return [
-                c for c in candidates 
-                if entity in str(c.item.fact_type).casefold() 
-                or entity in str(c.item.normalized_value).casefold() 
+                c for c in candidates
+                if entity in str(c.item.fact_type).casefold()
+                or entity in str(c.item.normalized_value).casefold()
                 or (isinstance(c.item.source_value, dict) and entity in str(c.item.source_value).casefold())
             ]
-            
+
         elif strict_intent == "DISEASE":
             return [c for c in candidates if "diagnosis" in str(c.item.fact_type).casefold() or "bệnh" in str(c.item.normalized_value).casefold()]
 
-    
+
     # Apply Safe Domain Filtering & Entity-specific Temporal Filtering
     if plan_dict and plan_dict.get("needs"):
         filtered_wrappers = []
-        
+
         # Instantiate the safe tool abstraction
         tenant_id = wrapped_candidates[0].scoped.tenant_id if wrapped_candidates else ""
         patient_id = wrapped_candidates[0].scoped.patient_id if wrapped_candidates else ""
         safe_tool = SafeTool(tenant_id=tenant_id, patient_id=patient_id, preloaded_packet=wrapped_candidates)
-        
+
         if _is_packet_wide_plan(plan_dict):
             filtered_wrappers = safe_tool.execute_summary(limit)
-            
+
             # Apply temporal filtering even for summary/packet-wide plans
             need = plan_dict.get("needs", [{}])[0] if plan_dict.get("needs") else {}
             temporal_dict = need.get("temporal", {}) if isinstance(need, dict) else getattr(need, "temporal", {})
@@ -411,7 +361,7 @@ def retrieve_evidence(
                 temporal_dict = temporal_dict.model_dump()
             elif hasattr(temporal_dict, "__dict__"):
                 temporal_dict = temporal_dict.__dict__
-            
+
             intent = temporal_dict.get("intent", "none") if isinstance(temporal_dict, dict) else "none"
             if intent != "none" and filtered_wrappers:
                 start_t = _parse_time(temporal_dict.get("start_time"))
@@ -435,7 +385,7 @@ def retrieve_evidence(
                 entity = need_dict.get("entity")
                 if entity:
                     dom_cands = safe_tool.filter_entity(dom_cands, str(entity))
-            
+
                 temporal_dict = need_dict.get("temporal", {})
                 intent = temporal_dict.get("intent", "none")
                 if intent != "none" and dom_cands:
@@ -465,10 +415,10 @@ def retrieve_evidence(
                         if endpoint_items:
                             endpoint_ids = {id(item) for item in endpoint_items}
                             dom_cands = [c for c in dom_cands if id(c.scoped.item) in endpoint_ids]
-                    
+
                 filtered_wrappers.extend(dom_cands)
-            
-            
+
+
         # Deduplicate
         seen_ids = set()
         wrapped_candidates = []
@@ -485,7 +435,7 @@ def retrieve_evidence(
             intent = "earliest"
         elif "trước đó" in q_lower or "lần trước" in q_lower:
             intent = "previous"
-            
+
         tk = 1 if intent in {"latest", "earliest", "previous"} else limit
         t_query = TemporalQuery(intent=intent, k=tk)
         items = [c.scoped.item for c in wrapped_candidates]
@@ -502,18 +452,18 @@ def retrieve_evidence(
         use_semantic = plan_dict.get("use_semantic", True)
     elif route not in {"narrative", "hybrid", "mixed"}:
         use_semantic = False
-        
+
     if use_semantic and question:
         from src.agents.retrieval.vector import SemanticRetriever
         sem_retriever = SemanticRetriever()
-        
+
         if wrapped_candidates:
             first_scoped = wrapped_candidates[0].scoped
             tenant_id = first_scoped.tenant_id
             patient_id = first_scoped.patient_id
-            
+
             sem_scores = sem_retriever.retrieve(tenant_id, patient_id, question, k=limit)
-            
+
             for cand in wrapped_candidates:
                 ev_id_str = str(cand.evidence_id)
                 if ev_id_str in sem_scores:
@@ -522,14 +472,14 @@ def retrieve_evidence(
     # 5. Hybrid Reranking
     reranker = BaselineWeightedReranker()
     ranked_wrappers = reranker.rerank(question or "", wrapped_candidates, k=limit)
-    
+
     selected = []
     seen = set()
     query_terms = _plan_query_terms(question or "", plan_dict)
     for item in ranked_wrappers:
         if item.evidence_id in seen:
             continue
-            
+
         # Enforce relevance filtering if required by the route or plan
         require_relevance = True
         if plan_dict:
@@ -538,7 +488,7 @@ def retrieve_evidence(
             # If the plan explicitly disables BOTH lexical and semantic, we don't require relevance (e.g. for summaries)
             elif not plan_dict.get("use_lexical", True) and not plan_dict.get("use_semantic", True):
                 require_relevance = False
-                
+
         if require_relevance and question:
             has_lexical = len(query_terms & _terms(_search_text(item.scoped.item))) > 0 if query_terms else True
             if not has_lexical and getattr(item, "semantic_score", 0.0) == 0.0:

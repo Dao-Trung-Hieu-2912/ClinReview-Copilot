@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Annotated, Literal, TypedDict
+
 from langgraph.graph.message import add_messages
 
 from src.agents.contracts import AgentError, AgentRequest, AgentResult, VerifiedClaim

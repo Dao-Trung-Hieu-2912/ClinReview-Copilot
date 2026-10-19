@@ -6,13 +6,13 @@ import html
 from datetime import datetime
 from io import BytesIO
 
+from reportlab.graphics.barcode.qr import QrCodeWidget
+from reportlab.graphics.shapes import Drawing
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER, TA_LEFT
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
-from reportlab.graphics.barcode.qr import QrCodeWidget
-from reportlab.graphics.shapes import Drawing
 from reportlab.platypus import (
     KeepTogether,
     Paragraph,
@@ -24,7 +24,9 @@ from reportlab.platypus import (
 
 from src.clinical.canonical import PatientSummary
 from src.clinical.care_plan_agent import CarePlanDataSummary, CarePlanDraft
-from src.clinical.pdf_generator import FONT as FONT_REGULAR, FONT_B as FONT_BOLD, FONT_I as FONT_ITALIC
+from src.clinical.pdf_generator import FONT as FONT_REGULAR
+from src.clinical.pdf_generator import FONT_B as FONT_BOLD
+from src.clinical.pdf_generator import FONT_I as FONT_ITALIC
 
 BLACK = colors.black
 DARK = colors.Color(0.14, 0.14, 0.14)

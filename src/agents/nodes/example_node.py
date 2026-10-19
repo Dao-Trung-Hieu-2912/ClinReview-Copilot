@@ -104,7 +104,7 @@ async def validate_node(state: AgentState) -> dict:
 
     query = state.get("query", "").strip()
     draft = state.get("response", "")
-    
+
     prompt = f"User question:\n{query}\n\nDraft answer:\n{draft}"
     try:
         validated_response = await _ask_model(_VALIDATE_PROMPT, prompt)

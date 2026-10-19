@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from uuid import NAMESPACE_URL, uuid5
 import re
+from uuid import NAMESPACE_URL, uuid5
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -239,7 +239,7 @@ def compose_trend_claims(evidence_packet: list[ScopedEvidence]) -> list[Proposed
             text_content += " " + " ".join(str(v) for v in source.values())
         else:
             text_content += " " + str(source)
-            
+
         if isinstance(nv, dict):
             text_content += " " + " ".join(str(v) for v in nv.values())
         else:
@@ -341,7 +341,7 @@ def compose_trend_claims(evidence_packet: list[ScopedEvidence]) -> list[Proposed
 
 def compose_atomic_claims_llm(
     evidence_packet: list[ScopedEvidence],
-    llm_client: "LLMClinicalClientBase",  # type: ignore[name-defined]  # noqa: F821
+    llm_client: LLMClinicalClientBase,  # type: ignore[name-defined]  # noqa: F821
     question: str | None = None,
 ) -> dict:
     """Compose claims using LLM with bounded evidence, then validate.
@@ -354,7 +354,6 @@ def compose_atomic_claims_llm(
     - Treatment/medication prescription claims are filtered before sending.
     - Prompt injection in evidence content is blocked by system prompt hierarchy.
     """
-    from src.agents.llm_client import LLMClinicalClientBase  # noqa: PLC0415
 
     # Build evidence dicts for the model — only what's in the bounded packet
     evidence_by_id: dict[str, ScopedEvidence] = {}
@@ -388,7 +387,7 @@ def compose_atomic_claims_llm(
     claims: list[ProposedClaim] = []
     unsupported_claims: list[ProposedClaim] = []
     conflicts: list[dict] = raw_claims.get("conflicts", [])
-    
+
     valid_section_codes = {
         "patient_overview", "active_conditions", "current_medications",
         "recent_results", "changes_to_review", "data_gaps",
@@ -434,7 +433,7 @@ def compose_atomic_claims_llm(
         text = str(raw.get("text", "")).strip()
         if not text or _is_administrative_header(text):
             continue
-        
+
         claim_id = str(uuid5(NAMESPACE_URL, f"clinical-review-unsupported:{text}"))
         unsupported_claims.append(
             ProposedClaim(

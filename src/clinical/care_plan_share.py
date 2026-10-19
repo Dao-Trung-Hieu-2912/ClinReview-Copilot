@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import secrets
+import socket
 import threading
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -14,8 +15,6 @@ from typing import Any
 import psycopg
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
-
-import socket
 
 from src.clinical.care_plan_agent import CarePlanDraft
 from src.config import get_settings
